@@ -6,7 +6,7 @@ from datetime import date, timedelta
 
 st.set_page_config(page_title="급식메뉴찾기", page_icon="🍱", layout="wide")
 st.title("🍱 급식메뉴찾기")
-st.write("최대 3개의 학교 급식을 비교해보세요!")
+st.write("최대 3개의 학교 급식을 비교해보세요! (칼로리 최고 · 메뉴 최소 · 메뉴 최다인 날만 보여줘요)")
 
 API_KEY = st.secrets.get("NEIS_API_KEY", "")
 
@@ -113,7 +113,7 @@ def format_date(ymd):
 
 
 # ---------------------------
-# 학교 검색 + 선택 UI (재사용 가능한 함수)
+# 학교 검색 + 선택 UI
 # ---------------------------
 def school_selector(slot_num):
     st.markdown(f"#### 🏫 학교 {slot_num}")
@@ -123,7 +123,7 @@ def school_selector(slot_num):
         placeholder="예: 당곡",
     )
 
-    if st.button(f"검색하기", key=f"search_btn_{slot_num}"):
+    if st.button("검색하기", key=f"search_btn_{slot_num}"):
         if school_input.strip() == "":
             st.warning("학교 이름을 입력해주세요.")
         else:
@@ -185,7 +185,7 @@ if selected_schools:
             from_ymd = start_date.strftime("%Y%m%d")
             to_ymd = end_date.strftime("%Y%m%d")
 
-            school_meal_data = {}  # 학교명 -> meals 리스트
+            school_meal_data = {}
 
             with st.spinner("급식 정보를 불러오고 있어요..."):
                 for school in selected_schools:
@@ -195,28 +195,8 @@ if selected_schools:
                     school_meal_data[school["학교명"]] = meals
 
             # ---------------------------
-            # 학교별 급식 메뉴 목록
+            # 학교별로 3가지 주제 날짜만 뽑기
             # ---------------------------
-            st.subheader("🍽 학교별 급식 메뉴")
-            cols = st.columns(len(school_meal_data))
-            for idx, (school_name, meals) in enumerate(school_meal_data.items()):
-                with cols[idx]:
-                    st.markdown(f"### 🏫 {school_name}")
-                    if not meals:
-                        st.info("해당 기간 급식 정보가 없어요.")
-                        continue
-                    for meal in meals:
-                        st.markdown(f"**📅 {format_date(meal['날짜'])}**")
-                        for item in meal["메뉴"]:
-                            st.write(f"- {item}")
-                        st.caption(f"칼로리: {meal['칼로리']} · 메뉴 {meal['메뉴_개수']}개")
-                        st.divider()
-
-            # ---------------------------
-            # 학교별 대표 날짜(칼로리 최고 / 메뉴 최소 / 메뉴 최다) 하나씩 뽑기
-            # ---------------------------
-            st.subheader("🏆 학교별 대표 급식 (각 주제당 날짜 1개씩)")
-
             summary = {}  # 학교명 -> {"최고칼로리": meal, "최소메뉴": meal, "최다메뉴": meal}
 
             for school_name, meals in school_meal_data.items():
@@ -229,9 +209,20 @@ if selected_schools:
                         "최소메뉴": min(meals_with_menu, key=lambda m: m["메뉴_개수"]),
                         "최다메뉴": max(meals_with_menu, key=lambda m: m["메뉴_개수"]),
                     }
+                else:
+                    st.warning(f"'{school_name}'은 해당 기간에 급식 정보가 없어요.")
 
             if summary:
-                tab1, tab2, tab3 = st.tabs(["🔥 칼로리 최고", "📉 메뉴 최소", "📈 메뉴 최다"])
+                st.markdown("""
+                > ⚠️ 참고: NEIS API는 **잔반(음식물 쓰레기)량 데이터를 제공하지 않아요.**  
+                > 그래서 "잔반없는날" 대신, 갖고 있는 정보 중 **메뉴 가짓수가 가장 많은 날**로 대체해서 보여드려요.
+                """)
+
+                tab1, tab2, tab3 = st.tabs([
+                    "🔥 칼로리가 가장 높은 날",
+                    "📉 메뉴가 가장 적은 날",
+                    "📈 메뉴가 가장 많은 날 (잔반없는날 대체)",
+                ])
 
                 # --- 탭 1: 칼로리 최고 ---
                 with tab1:
@@ -240,12 +231,11 @@ if selected_schools:
                         meal = info["최고칼로리"]
                         with cols[idx]:
                             st.markdown(f"#### 🏫 {school_name}")
-                            st.write(f"**{format_date(meal['날짜'])}**")
+                            st.write(f"**📅 {format_date(meal['날짜'])}**")
                             for item in meal["메뉴"]:
                                 st.write(f"- {item}")
                             st.caption(f"칼로리: {meal['칼로리']}")
 
-                    # 비교 막대그래프
                     fig = go.Figure()
                     fig.add_trace(go.Bar(
                         x=list(summary.keys()),
@@ -269,7 +259,7 @@ if selected_schools:
                         meal = info["최소메뉴"]
                         with cols[idx]:
                             st.markdown(f"#### 🏫 {school_name}")
-                            st.write(f"**{format_date(meal['날짜'])}**")
+                            st.write(f"**📅 {format_date(meal['날짜'])}**")
                             for item in meal["메뉴"]:
                                 st.write(f"- {item}")
                             st.caption(f"메뉴 가짓수: {meal['메뉴_개수']}개")
@@ -290,14 +280,14 @@ if selected_schools:
                     )
                     st.plotly_chart(fig, use_container_width=True)
 
-                # --- 탭 3: 메뉴 최다 ---
+                # --- 탭 3: 메뉴 최다 (잔반없는날 대체) ---
                 with tab3:
                     cols = st.columns(len(summary))
                     for idx, (school_name, info) in enumerate(summary.items()):
                         meal = info["최다메뉴"]
                         with cols[idx]:
                             st.markdown(f"#### 🏫 {school_name}")
-                            st.write(f"**{format_date(meal['날짜'])}**")
+                            st.write(f"**📅 {format_date(meal['날짜'])}**")
                             for item in meal["메뉴"]:
                                 st.write(f"- {item}")
                             st.caption(f"메뉴 가짓수: {meal['메뉴_개수']}개")
